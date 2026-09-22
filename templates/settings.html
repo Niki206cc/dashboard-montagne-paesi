@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="it">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Impostazioni · Control Center</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
+<body>
+  <header><div><p class="eyebrow">MONTAGNE & PAESI</p><h1>Impostazioni</h1><p class="subtitle">Configura le caselle email senza modificare file</p></div><a class="back" href="/">← Dashboard</a></header>
+  <main class="settings-main">
+    <form id="settings-form">
+      <section class="settings-card"><h2>Comunicati stampa</h2><div class="form-grid" data-mailbox="comunicati"></div></section>
+      <section class="settings-card"><h2>Foto del giorno</h2><div class="form-grid" data-mailbox="foto"></div></section>
+      <div class="save-row"><span id="message"></span><button class="save-button" type="submit">SALVA IMPOSTAZIONI</button></div>
+    </form>
+  </main>
+  <script src="{{ url_for('static', filename='settings.js') }}"></script>
+</body></html>
