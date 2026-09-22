@@ -1,0 +1,30 @@
+services:
+  dashboard-montagne-paesi:
+    build: .
+    container_name: dashboard-montagne-paesi
+    restart: unless-stopped
+    ports:
+      - "8091:8080"
+    environment:
+      - TZ=Europe/Rome
+      - DATA_DIR=/data
+      - DASHBOARD_SCHEME=${DASHBOARD_SCHEME:-http}
+      - COMUNICATI_IMAP_HOST=${COMUNICATI_IMAP_HOST:-}
+      - COMUNICATI_IMAP_PORT=${COMUNICATI_IMAP_PORT:-993}
+      - COMUNICATI_IMAP_USER=${COMUNICATI_IMAP_USER:-}
+      - COMUNICATI_IMAP_PASSWORD=${COMUNICATI_IMAP_PASSWORD:-}
+      - FOTO_IMAP_HOST=${FOTO_IMAP_HOST:-}
+      - FOTO_IMAP_PORT=${FOTO_IMAP_PORT:-993}
+      - FOTO_IMAP_USER=${FOTO_IMAP_USER:-}
+      - FOTO_IMAP_PASSWORD=${FOTO_IMAP_PASSWORD:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - dashboard_data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  dashboard_data:
