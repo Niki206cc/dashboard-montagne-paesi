@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Montagne & Paesi Control Center</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header>
+    <div>
+      <p class="eyebrow">MONTAGNE & PAESI</p>
+      <h1>Control Center</h1>
+      <p class="subtitle">Automazioni, pubblicazioni e servizi in un solo posto</p>
+    </div>
+    <div class="header-actions"><a class="back" href="/impostazioni">⚙ Impostazioni</a><div class="summary"><span id="global-dot" class="dot pending"></span><strong id="global-status">Caricamento…</strong><small id="updated"></small></div></div>
+  </header>
+  <main><section id="grid" class="grid"></section></main>
+  <template id="card-template">
+    <article class="card">
+      <div class="card-head"><div class="icon"></div><div><h2></h2><p class="description"></p></div><span class="badge"></span></div>
+      <div class="metrics">
+        <div><span class="label">CONTAINER</span><strong class="container-state">—</strong></div>
+        <div class="mail-box"><span class="label">EMAIL NUOVE</span><strong class="unread">—</strong></div>
+      </div>
+      <div class="log"><span class="label">ULTIME ATTIVITÀ</span><ul></ul></div>
+      <a class="button" target="_blank" rel="noopener">APRI PANNELLO ↗</a>
+    </article>
+  </template>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
