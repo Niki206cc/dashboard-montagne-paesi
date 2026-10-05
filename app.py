@@ -2,6 +2,7 @@ import os
 import re
 import imaplib
 import json
+import html
 from email import message_from_bytes
 from email.header import decode_header, make_header
 from email.utils import parsedate_to_datetime
@@ -15,7 +16,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
 CONFIG_FILE = DATA_DIR / "config.json"
 KEY_FILE = DATA_DIR / ".secret.key"
@@ -151,31 +152,75 @@ def check_http(url):
         return False
 
 
-def format_log_line(line):
-    line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+def parse_log_line(line):
+    line = html.unescape(re.sub(r"\x1b\[[0-9;]*m", "", line)).strip()
     match = re.match(r"^(\d{4}-\d{2}-\d{2}T\S+)\s+(.*)$", line)
     if not match:
-        return line
+        return None, line
     raw_date, message = match.groups()
     try:
         date = datetime.fromisoformat(raw_date.replace("Z", "+00:00")).astimezone(ZoneInfo("Europe/Rome"))
-        return f"{date:%d/%m/%Y %H:%M} · {message.strip()}"
     except ValueError:
-        return message.strip()
+        date = None
+    message = re.sub(r"^\[\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}\]\s*", "", message.strip())
+    return date, message
+
+
+def short_date(date):
+    return date.strftime("%d/%m/%y - %H:%M") if date else "Data non disponibile"
+
+
+def readable_error(message, date):
+    title = re.search(r"user_title=([^|]+)", message, re.I)
+    detail = re.search(r"user_msg=([^|]+)", message, re.I)
+    if title or detail:
+        text = " — ".join(x.group(1).strip() for x in (title, detail) if x)
+    else:
+        text = re.split(r"\s*\|\s*(?:fbtrace_id|headers)=", message, maxsplit=1, flags=re.I)[0]
+        text = re.sub(r"^(?:error|errore|exception|failed)\s*[:\-]?\s*", "", text, flags=re.I).strip()
+    return f"🆘 {short_date(date)} · Errore: {text[:220]}"
+
+
+def publication_title(message):
+    patterns = [
+        r"Pubblicazione dalla coda:\s*[\"“]?(.+?)[\"”]?\s*$",
+        r"(?:titolo|articolo)\s*[=:]\s*[\"“]?(.+?)[\"”]?\s*$",
+        r"(?:pubblicato|pubblicata|pubblicazione|inviato|inviata|creato con successo)\s*[:\-]\s*[\"“]?(.+?)[\"”]?\s*$",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, message, re.I)
+        if match:
+            return match.group(1).strip().strip('"“”').replace("“", "").replace("”", "")
+    return None
 
 
 def simplify_logs(raw, service_id=None):
     lines = [re.sub(r"\x1b\[[0-9;]*m", "", x).strip() for x in raw.splitlines() if x.strip()]
     # Le richieste del server web non sono attività editoriali utili.
     lines = [x for x in lines if not re.search(r'\b(?:GET|POST|PUT|DELETE|HEAD|OPTIONS)\s+\S+\s+HTTP/[\d.]+', x)]
-    patterns = {
-        "instagram": r"error|errore|failed|exception|warning|pubblic|post|instagram|caption|titolo|caricat|inviat|success",
-        "amazon": r"error|errore|failed|exception|warning|pubblic|articol|wordpress|titolo|amazon|asin|success",
-    }
-    pattern = patterns.get(service_id, r"error|errore|failed|exception|success|pubblic|inviat|warning|mail")
-    important = [x for x in lines if re.search(pattern, x, re.I)]
+    editorial_services = {"instagram", "amazon", "carburanti", "meteo", "oroscopo"}
+    if service_id in editorial_services:
+        activities = []
+        for line in reversed(lines):
+            date, message = parse_log_line(line)
+            if re.search(r"error|errore|failed|exception|too many actions|user_title=", message, re.I):
+                activities.append(readable_error(message, date))
+            else:
+                title = publication_title(message)
+                if title:
+                    icon = "🆕" if service_id == "instagram" else "📰"
+                    activities.append(f'{icon} {short_date(date)} · "{title[:220]}"')
+            if len(activities) == 8:
+                break
+        return activities
+
+    important = [x for x in lines if re.search(r"error|errore|failed|exception|success|pubblic|inviat|warning|mail", x, re.I)]
     selected = (important or lines)[-8:]
-    return [format_log_line(x)[-300:] for x in reversed(selected)]
+    formatted = []
+    for line in reversed(selected):
+        date, message = parse_log_line(line)
+        formatted.append(f"{short_date(date)} · {message[-260:]}")
+    return formatted
 
 
 @app.get("/api/status")
@@ -194,8 +239,15 @@ def api_status():
                 item["health"] = container.attrs.get("State", {}).get("Health", {}).get("Status")
                 item["started_at"] = container.attrs.get("State", {}).get("StartedAt")
                 item["logs"] = simplify_logs(container.logs(tail=300, timestamps=True).decode("utf-8", errors="replace"), service["id"])
+                if service["id"] in {"instagram", "carburanti", "meteo", "oroscopo", "amazon"}:
+                    item["activities"] = item["logs"]
+                    if container.status != "running":
+                        stopped = "🛑 Sistema di caricamento Instagram fermo" if service["id"] == "instagram" else f"🛑 Sistema {service['name']} fermo"
+                        item["activities"].insert(0, stopped)
             except Exception as exc:
                 item["logs"] = [f"Lettura Docker non disponibile: {exc}"]
+        elif service["id"] == "instagram" and client:
+            item["activities"] = ["🛑 Sistema di caricamento Instagram non trovato"]
         item["panel_online"] = check_http(url)
         if service.get("mail_prefix"):
             mailbox = mail_activity(service["mail_prefix"])
