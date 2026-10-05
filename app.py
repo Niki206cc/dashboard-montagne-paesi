@@ -2,8 +2,12 @@ import os
 import re
 import imaplib
 import json
+from email import message_from_bytes
+from email.header import decode_header, make_header
+from email.utils import parsedate_to_datetime
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import docker
 import requests
@@ -80,13 +84,22 @@ def decrypt_password(value):
         return ""
 
 
-def mail_unseen(prefix):
+def clean_mail_text(value):
+    if not value:
+        return "(senza oggetto)"
+    try:
+        return str(make_header(decode_header(value))).strip()
+    except Exception:
+        return str(value).strip()
+
+
+def mail_activity(prefix, limit=8):
     saved = load_config().get("mailboxes", {}).get(prefix.lower(), {})
     host = saved.get("host") or os.getenv(f"{prefix}_IMAP_HOST")
     user = saved.get("user") or os.getenv(f"{prefix}_IMAP_USER")
     password = decrypt_password(saved.get("password")) or os.getenv(f"{prefix}_IMAP_PASSWORD")
     if not all((host, user, password)):
-        return None
+        return {"unread": None, "messages": []}
     try:
         port = int(saved.get("port") or os.getenv(f"{prefix}_IMAP_PORT", "993"))
         folder = saved.get("folder") or os.getenv(f"{prefix}_IMAP_FOLDER", "INBOX")
@@ -94,11 +107,29 @@ def mail_unseen(prefix):
             box.login(user, password)
             box.select(folder, readonly=True)
             status, data = box.search(None, "UNSEEN")
-            if status == "OK":
-                return len(data[0].split())
-    except Exception:
-        return -1
-    return -1
+            if status != "OK":
+                return {"unread": -1, "messages": [], "error": "Impossibile leggere la casella"}
+            ids = data[0].split()
+            messages = []
+            for message_id in reversed(ids[-limit:]):
+                fetch_status, parts = box.fetch(message_id, "(BODY.PEEK[HEADER.FIELDS (SUBJECT FROM DATE)])")
+                if fetch_status != "OK" or not parts or not isinstance(parts[0], tuple):
+                    continue
+                message = message_from_bytes(parts[0][1])
+                raw_date = message.get("Date", "")
+                try:
+                    date = parsedate_to_datetime(raw_date).isoformat()
+                except (TypeError, ValueError, OverflowError):
+                    date = raw_date
+                messages.append({
+                    "title": clean_mail_text(message.get("Subject")),
+                    "from": clean_mail_text(message.get("From")),
+                    "date": date,
+                    "type": "email",
+                })
+            return {"unread": len(ids), "messages": messages}
+    except Exception as exc:
+        return {"unread": -1, "messages": [], "error": f"Errore email: {exc}"}
 
 
 def panel_url(service):
@@ -119,11 +150,31 @@ def check_http(url):
         return False
 
 
-def simplify_logs(raw):
+def format_log_line(line):
+    line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+    match = re.match(r"^(\d{4}-\d{2}-\d{2}T\S+)\s+(.*)$", line)
+    if not match:
+        return line
+    raw_date, message = match.groups()
+    try:
+        date = datetime.fromisoformat(raw_date.replace("Z", "+00:00")).astimezone(ZoneInfo("Europe/Rome"))
+        return f"{date:%d/%m/%Y %H:%M} · {message.strip()}"
+    except ValueError:
+        return message.strip()
+
+
+def simplify_logs(raw, service_id=None):
     lines = [re.sub(r"\x1b\[[0-9;]*m", "", x).strip() for x in raw.splitlines() if x.strip()]
-    important = [x for x in lines if re.search(r"error|failed|success|pubblic|inviat|warning|mail", x, re.I)]
-    selected = (important or lines)[-5:]
-    return [x[-240:] for x in selected]
+    # Le richieste del server web non sono attività editoriali utili.
+    lines = [x for x in lines if not re.search(r'\b(?:GET|POST|PUT|DELETE|HEAD|OPTIONS)\s+\S+\s+HTTP/[\d.]+', x)]
+    patterns = {
+        "instagram": r"error|errore|failed|exception|warning|pubblic|post|instagram|caption|titolo|caricat|inviat|success",
+        "amazon": r"error|errore|failed|exception|warning|pubblic|articol|wordpress|titolo|amazon|asin|success",
+    }
+    pattern = patterns.get(service_id, r"error|errore|failed|exception|success|pubblic|inviat|warning|mail")
+    important = [x for x in lines if re.search(pattern, x, re.I)]
+    selected = (important or lines)[-8:]
+    return [format_log_line(x)[-300:] for x in reversed(selected)]
 
 
 @app.get("/api/status")
@@ -134,19 +185,23 @@ def api_status():
         item = dict(service)
         container = get_container(client, service)
         url = panel_url(service)
-        item.update({"panel_url": url, "checked_at": now_iso(), "state": "unknown", "health": None, "logs": [], "unread": None})
+        item.update({"panel_url": url, "checked_at": now_iso(), "state": "unknown", "health": None, "logs": [], "activities": [], "unread": None})
         if container:
             try:
                 container.reload()
                 item["state"] = container.status
                 item["health"] = container.attrs.get("State", {}).get("Health", {}).get("Status")
                 item["started_at"] = container.attrs.get("State", {}).get("StartedAt")
-                item["logs"] = simplify_logs(container.logs(tail=80, timestamps=True).decode("utf-8", errors="replace"))
+                item["logs"] = simplify_logs(container.logs(tail=300, timestamps=True).decode("utf-8", errors="replace"), service["id"])
             except Exception as exc:
                 item["logs"] = [f"Lettura Docker non disponibile: {exc}"]
         item["panel_online"] = check_http(url)
         if service.get("mail_prefix"):
-            item["unread"] = mail_unseen(service["mail_prefix"])
+            mailbox = mail_activity(service["mail_prefix"])
+            item["unread"] = mailbox["unread"]
+            item["activities"] = mailbox["messages"]
+            if mailbox.get("error"):
+                item["logs"] = [mailbox["error"], *item["logs"]]
         result.append(item)
     return jsonify({"services": result, "updated_at": now_iso(), "docker_connected": client is not None})
 
