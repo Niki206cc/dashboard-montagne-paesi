@@ -15,6 +15,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
+APP_VERSION = "1.1.0"
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
 CONFIG_FILE = DATA_DIR / "config.json"
 KEY_FILE = DATA_DIR / ".secret.key"
@@ -251,7 +252,7 @@ def save_settings():
 
 @app.get("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", app_version=APP_VERSION)
 
 
 @app.get("/impostazioni")
