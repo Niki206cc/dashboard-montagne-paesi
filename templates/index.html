@@ -18,10 +18,11 @@
   <main><section id="grid" class="grid"></section></main>
   <template id="card-template">
     <article class="card">
-      <div class="card-head"><div class="icon"></div><div><h2><span class="service-name"></span><span class="title-count" hidden></span></h2><p class="description"></p></div><span class="badge"></span></div>
+      <div class="card-head"><div class="icon"></div><div><h2><span class="service-name"></span><span class="title-count" hidden></span></h2><p class="description"></p></div><span class="traffic-light" role="status" aria-label="Stato servizio"><i class="red"></i><i class="orange"></i><i class="green"></i></span></div>
       <div class="metrics">
         <div><span class="label">CONTAINER</span><strong class="container-state">—</strong></div>
         <div class="mail-box"><span class="label">EMAIL NUOVE</span><strong class="unread">—</strong></div>
+        <div class="extra-box" hidden><span class="label extra-label"></span><strong class="extra-value">—</strong></div>
       </div>
       <div class="log"><span class="label">ULTIME ATTIVITÀ</span><ul></ul></div>
       <a class="button" target="_blank" rel="noopener">APRI PANNELLO ↗</a>
