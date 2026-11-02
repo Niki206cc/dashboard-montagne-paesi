@@ -16,7 +16,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
 CONFIG_FILE = DATA_DIR / "config.json"
 KEY_FILE = DATA_DIR / ".secret.key"
@@ -183,9 +183,10 @@ def readable_error(message, date):
 
 def publication_title(message):
     patterns = [
+        r'"(?:title|titolo|post_title)"\s*:\s*"([^"]+)"',
         r"Pubblicazione dalla coda:\s*[\"“]?(.+?)[\"”]?\s*$",
         r"(?:titolo|articolo)\s*[=:]\s*[\"“]?(.+?)[\"”]?\s*$",
-        r"(?:pubblicato|pubblicata|pubblicazione|inviato|inviata|creato con successo)\s*[:\-]\s*[\"“]?(.+?)[\"”]?\s*$",
+        r"(?:post|articolo|previsioni?|oroscopo)?\s*(?:pubblicato|pubblicata|inviato|inviata|creato con successo)\s*[:\-]\s*[\"“]?(.+?)[\"”]?\s*$",
     ]
     for pattern in patterns:
         match = re.search(pattern, message, re.I)
@@ -194,25 +195,100 @@ def publication_title(message):
     return None
 
 
+def is_error_message(message):
+    return bool(re.search(r"error|errore|failed|exception|traceback|too many actions|user_title=|401|403", message, re.I))
+
+
+def is_success_message(message, service_id):
+    if is_error_message(message):
+        return False
+    if service_id == "instagram" and re.search(r"Pubblicazione dalla coda", message, re.I):
+        return False
+    return bool(re.search(
+        r"✅|pubblicat[oa](?:\s+su\s+(?:instagram|wordpress))?\s*[:\-]|pubblicat[oa].*(?:successo|correttamente)|"
+        r"(?:successo|correttamente).*pubblicat[oa]|inviat[oa]\s*[:\-]|inviat[oa].*(?:successo|correttamente)|creato con successo",
+        message,
+        re.I,
+    ))
+
+
+def editorial_activities(raw, service_id, limit=8):
+    lines = [x for x in raw.splitlines() if x.strip()]
+    activities = []
+    seen = set()
+    for line in reversed(lines):
+        date, message = parse_log_line(line)
+        if is_error_message(message):
+            activity = readable_error(message, date)
+        elif is_success_message(message, service_id):
+            title = publication_title(message)
+            if not title:
+                continue
+            icon = "🆕" if service_id == "instagram" else "📰"
+            activity = f'{icon} {short_date(date)} · "{title[:220]}"'
+        else:
+            continue
+        if activity not in seen:
+            seen.add(activity)
+            activities.append(activity)
+        if len(activities) == limit:
+            break
+    return activities
+
+
+def count_successful_publications(raw, service_id):
+    publications = set()
+    for line in raw.splitlines():
+        date, message = parse_log_line(line)
+        if not is_success_message(message, service_id):
+            continue
+        title = publication_title(message)
+        if title:
+            publications.add((date.strftime("%Y-%m-%d %H:%M") if date else "", title.casefold()))
+    return len(publications)
+
+
+def extract_image_url(message):
+    labelled = re.search(r'(?:image|immagine|thumbnail|media_url)["\']?\s*[:=]\s*["\']?(https?://[^\s"\']+)', message, re.I)
+    if labelled:
+        return labelled.group(1).rstrip(",)}]")
+    image = re.search(r'https?://[^\s"\']+\.(?:jpe?g|png|webp|gif)(?:\?[^\s"\']*)?', message, re.I)
+    return image.group(0).rstrip(",)}]") if image else None
+
+
+def rss_activities(raw, limit=8):
+    lines = [x for x in raw.splitlines() if x.strip()]
+    activities = []
+    for index in range(len(lines) - 1, -1, -1):
+        date, message = parse_log_line(lines[index])
+        if is_error_message(message):
+            activities.append({"text": readable_error(message, date), "type": "error"})
+        elif is_success_message(message, "rss") or re.search(r"(?:rss|whatsapp|telegram).*(?:inviat|pubblicat)", message, re.I):
+            title = publication_title(message)
+            if not title:
+                continue
+            nearby = " ".join(parse_log_line(x)[1] for x in lines[max(0, index - 2):min(len(lines), index + 3)])
+            activities.append({
+                "text": f'📰 {short_date(date)} · "{title[:220]}"',
+                "title": title[:220],
+                "image": extract_image_url(nearby),
+                "type": "publication",
+            })
+        if len(activities) == limit:
+            break
+    return activities
+
+
 def simplify_logs(raw, service_id=None):
     lines = [re.sub(r"\x1b\[[0-9;]*m", "", x).strip() for x in raw.splitlines() if x.strip()]
     # Le richieste del server web non sono attività editoriali utili.
     lines = [x for x in lines if not re.search(r'\b(?:GET|POST|PUT|DELETE|HEAD|OPTIONS)\s+\S+\s+HTTP/[\d.]+', x)]
     editorial_services = {"instagram", "amazon", "carburanti", "meteo", "oroscopo"}
     if service_id in editorial_services:
-        activities = []
-        for line in reversed(lines):
-            date, message = parse_log_line(line)
-            if re.search(r"error|errore|failed|exception|too many actions|user_title=", message, re.I):
-                activities.append(readable_error(message, date))
-            else:
-                title = publication_title(message)
-                if title:
-                    icon = "🆕" if service_id == "instagram" else "📰"
-                    activities.append(f'{icon} {short_date(date)} · "{title[:220]}"')
-            if len(activities) == 8:
-                break
-        return activities
+        return editorial_activities("\n".join(lines), service_id)
+
+    if service_id == "rss":
+        return rss_activities("\n".join(lines))
 
     important = [x for x in lines if re.search(r"error|errore|failed|exception|success|pubblic|inviat|warning|mail", x, re.I)]
     selected = (important or lines)[-8:]
@@ -231,19 +307,27 @@ def api_status():
         item = dict(service)
         container = get_container(client, service)
         url = panel_url(service)
-        item.update({"panel_url": url, "checked_at": now_iso(), "state": "unknown", "health": None, "logs": [], "activities": [], "unread": None})
+        item.update({"panel_url": url, "checked_at": now_iso(), "state": "unknown", "health": None, "logs": [], "activities": [], "unread": None, "published_today": None})
         if container:
             try:
                 container.reload()
                 item["state"] = container.status
                 item["health"] = container.attrs.get("State", {}).get("Health", {}).get("Status")
                 item["started_at"] = container.attrs.get("State", {}).get("StartedAt")
-                item["logs"] = simplify_logs(container.logs(tail=300, timestamps=True).decode("utf-8", errors="replace"), service["id"])
+                raw_logs = container.logs(tail=800, timestamps=True).decode("utf-8", errors="replace")
+                item["logs"] = simplify_logs(raw_logs, service["id"])
                 if service["id"] in {"instagram", "carburanti", "meteo", "oroscopo", "amazon"}:
                     item["activities"] = item["logs"]
                     if container.status != "running":
                         stopped = "🛑 Sistema di caricamento Instagram fermo" if service["id"] == "instagram" else f"🛑 Sistema {service['name']} fermo"
                         item["activities"].insert(0, stopped)
+                elif service["id"] == "rss":
+                    item["activities"] = item["logs"]
+                if service["id"] == "instagram":
+                    local_now = datetime.now(ZoneInfo("Europe/Rome"))
+                    day_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+                    today_logs = container.logs(since=day_start, timestamps=True).decode("utf-8", errors="replace")
+                    item["published_today"] = count_successful_publications(today_logs, "instagram")
             except Exception as exc:
                 item["logs"] = [f"Lettura Docker non disponibile: {exc}"]
         elif service["id"] == "instagram" and client:
@@ -254,7 +338,9 @@ def api_status():
             item["unread"] = mailbox["unread"]
             item["activities"] = mailbox["messages"]
             if mailbox.get("error"):
-                item["logs"] = [mailbox["error"], *item["logs"]]
+                item["activities"] = [f"🆘 {mailbox['error']}"]
+            elif service["id"] == "foto" and mailbox["unread"] is None:
+                item["activities"] = ["Configura la casella email nelle Impostazioni"]
         result.append(item)
     return jsonify({"services": result, "updated_at": now_iso(), "docker_connected": client is not None})
 
