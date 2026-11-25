@@ -3,31 +3,46 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Montagne & Paesi Control Center</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <title>Montagne & Paesi · Control Center</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ app_version }}">
 </head>
 <body>
-  <header>
-    <div>
-      <p class="eyebrow">MONTAGNE & PAESI</p>
-      <h1>Control Center <span class="app-version">v{{ app_version }}</span></h1>
-      <p class="subtitle">Automazioni, pubblicazioni e servizi in un solo posto</p>
+  <header class="topbar">
+    <div class="topwrap">
+      <div class="brand">
+        <div class="logo">M&amp;P</div>
+        <div><h1>Control Center <span class="app-version">v{{ app_version }}</span></h1><p class="subtitle">Automazioni di Montagne &amp; Paesi</p></div>
+      </div>
+      <div class="sp"></div>
+      <div class="summary"><span id="global-dot" class="dot pending"></span><div><strong id="global-status">Caricamento…</strong><small id="updated"></small></div></div>
+      <button class="ghost" id="reload" title="Aggiorna ora">⟳</button>
+      <a class="ghost" href="/impostazioni">⚙ Impostazioni</a>
     </div>
-    <div class="header-actions"><a class="back" href="/impostazioni">⚙ Impostazioni</a><div class="summary"><span id="global-dot" class="dot pending"></span><strong id="global-status">Caricamento…</strong><small id="updated"></small></div></div>
   </header>
-  <main><section id="grid" class="grid"></section></main>
+  <main>
+    <section class="chips" id="chips"></section>
+    <section id="grid" class="grid"></section>
+  </main>
+
   <template id="card-template">
     <article class="card">
-      <div class="card-head"><div class="icon"></div><div><h2><span class="service-name"></span><span class="title-count" hidden></span></h2><p class="description"></p></div><span class="traffic-light" role="status" aria-label="Stato servizio"><i class="red"></i><i class="orange"></i><i class="green"></i></span></div>
-      <div class="metrics">
-        <div><span class="label">CONTAINER</span><strong class="container-state">—</strong></div>
-        <div class="mail-box"><span class="label">EMAIL NUOVE</span><strong class="unread">—</strong></div>
-        <div class="extra-box" hidden><span class="label extra-label"></span><strong class="extra-value">—</strong></div>
+      <div class="card-head">
+        <div class="icon"></div>
+        <div class="head-text"><h2><span class="service-name"></span><span class="title-count" hidden></span></h2><p class="description"></p></div>
+        <span class="pill"><i></i><span class="pill-text"></span></span>
       </div>
-      <div class="log"><span class="label">ULTIME ATTIVITÀ</span><ul></ul></div>
-      <a class="button" target="_blank" rel="noopener">APRI PANNELLO ↗</a>
+      <div class="kpis"></div>
+      <div class="last" hidden>
+        <div class="last-img"></div>
+        <div class="last-body"><span class="label last-label"></span><a class="last-title" target="_blank" rel="noopener"></a><span class="last-when"></span></div>
+      </div>
+      <div class="queue" hidden><span class="label">PROSSIMI IN CODA</span><ul></ul></div>
+      <div class="errors" hidden><span class="label">DA CONTROLLARE</span><ul></ul></div>
+      <ul class="notes"></ul>
+      <div class="log" hidden><span class="label">ULTIME ATTIVITÀ</span><ul></ul></div>
+      <div class="card-foot"><span class="container-state"></span><a class="button" target="_blank" rel="noopener">Apri pannello ↗</a></div>
     </article>
   </template>
-  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v={{ app_version }}"></script>
 </body>
 </html>

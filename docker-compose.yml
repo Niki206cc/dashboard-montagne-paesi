@@ -17,6 +17,10 @@ services:
       - FOTO_IMAP_PORT=${FOTO_IMAP_PORT:-993}
       - FOTO_IMAP_USER=${FOTO_IMAP_USER:-}
       - FOTO_IMAP_PASSWORD=${FOTO_IMAP_PASSWORD:-}
+      - WP_URL=${WP_URL:-https://www.montagneepaesi.com}
+      - EVENTI_PORT=${EVENTI_PORT:-8095}
+      - EVENTI_WEB_USER=${EVENTI_WEB_USER:-admin}
+      - EVENTI_WEB_PASSWORD=${EVENTI_WEB_PASSWORD:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - dashboard_data:/data

@@ -24,5 +24,14 @@ La socket Docker è montata in sola lettura. La dashboard non contiene pulsanti 
 - Meteo (`8124`)
 - Oroscopo (`8086`)
 - Foto del giorno (`8090`)
-- WAHA (`3000`)
-- RSS Bot
+- WhatsApp / WAHA (`3000`) con l'ultimo articolo inviato sul canale (log di `rssbot_montagne`)
+- Eventi (`8095`, mep-eventi): resoconto dell'ultimo giro. Se il pannello eventi ha una password, impostare `EVENTI_WEB_PASSWORD` nello stack
+
+## Novità 2.0.0
+
+- Nuova grafica chiara, schede con stato Operativo / Da controllare / Problema.
+- Instagram: pubblicati oggi, coda, quota Meta e ultimo post con foto e orario (richiede igbot ≥ 2.8.1).
+- Carburanti e oroscopo: ultimo caricamento riuscito; l'errore compare solo se oggi l'articolo non è stato caricato.
+- Meteo: data e ora dell'ultimo articolo e eventuali errori.
+- WhatsApp: ultimo articolo inviato sul canale con foto; la scheda RSS Bot è stata rimossa.
+- Eventi: resoconto dell'ultimo giro (nuovi, aggiornati, errori) e prossimo giro.
